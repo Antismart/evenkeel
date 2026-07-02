@@ -57,7 +57,16 @@ if command -v ckb-cli >/dev/null 2>&1; then
   KEY_INFO="$(ckb-cli util key-info --privkey-path fiber-node/ckb/key 2>/dev/null || true)"
 fi
 
-# 5. Bring the node up.
+# 5. Image: no 0.8.x tag is published on Docker Hub/GHCR, so build v0.8.1
+#    locally from the repo's own Dockerfile (Rust release build; takes a while
+#    the first time).
+if ! docker image inspect fiber:0.8.1-local >/dev/null 2>&1; then
+  echo "Building fiber:0.8.1-local from source (first time only, ~10-30 min)..."
+  docker build -t fiber:0.8.1-local -f docker/Dockerfile \
+    "https://github.com/nervosnetwork/fiber.git#${FNN_TAG}"
+fi
+
+# 6. Bring the node up.
 docker compose up -d
 echo
 echo "Node starting. Follow logs with:  docker compose logs -f fnn"

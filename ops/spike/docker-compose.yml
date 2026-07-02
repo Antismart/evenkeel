@@ -3,9 +3,11 @@
 # and creates .env. Do not `docker compose up` from a bare clone.
 #
 # Pinned to v0.8.1 (latest v0.8.x release; architecture targets FNN v0.8.x).
+# No 0.8.x image is published on Docker Hub / GHCR (publishing started at
+# 0.9.0-rc), so setup-fnn.sh builds this tag locally from the repo Dockerfile.
 services:
   fnn:
-    image: nervos/fiber:v0.8.1
+    image: fiber:0.8.1-local
     container_name: evenkeel-spike-fnn
     restart: unless-stopped
     environment:
