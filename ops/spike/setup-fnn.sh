@@ -41,13 +41,24 @@ fi
 # 3. Config: the image entrypoint only copies its bundled template when
 #    /fiber/config.yml is missing, so pre-seeding here wins. Patch the RPC
 #    bind so the container port is reachable through the compose mapping.
+#    FNN v0.8.x rejects "public" RPC binds (including 0.0.0.0) without biscuit
+#    auth, but RFC1918 addresses pass its is_public_addr check — so bind the
+#    static container IP assigned in docker-compose.yml.
+RPC_BIND="172.28.0.2:8227"
 if [ ! -f fiber-node/config.yml ]; then
   curl -fsSL "$CONFIG_URL" -o fiber-node/config.yml
-  sed -i.bak 's/127\.0\.0\.1:8227/0.0.0.0:8227/' fiber-node/config.yml
+  sed -i.bak "s/127\.0\.0\.1:8227/${RPC_BIND}/" fiber-node/config.yml
   rm -f fiber-node/config.yml.bak
-  echo "Seeded fiber-node/config.yml (testnet ${FNN_TAG}, RPC bind patched)"
+  echo "Seeded fiber-node/config.yml (testnet ${FNN_TAG}, RPC bound to ${RPC_BIND})"
 else
-  echo "Config already present: fiber-node/config.yml"
+  # Repair configs seeded by earlier revisions of this script.
+  if grep -qE '(0\.0\.0\.0|127\.0\.0\.1):8227' fiber-node/config.yml; then
+    sed -i.bak -e "s/0\.0\.0\.0:8227/${RPC_BIND}/" -e "s/127\.0\.0\.1:8227/${RPC_BIND}/" fiber-node/config.yml
+    rm -f fiber-node/config.yml.bak
+    echo "Patched existing config: RPC bind → ${RPC_BIND}"
+  else
+    echo "Config already present: fiber-node/config.yml"
+  fi
 fi
 
 # 4. Derive the funding address BEFORE first start — FNN encrypts the key

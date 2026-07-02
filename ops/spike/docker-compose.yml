@@ -18,7 +18,17 @@ services:
       - ./fiber-node:/fiber
     ports:
       - "8228:8228" # Fiber P2P
-      # RPC can spend funds. The in-container bind is 0.0.0.0:8227 (patched by
-      # setup-fnn.sh so the port mapping works), but the HOST bind stays
-      # loopback-only — never expose this beyond the machine (architecture §9).
+      # RPC can spend funds. FNN v0.8.x refuses non-private RPC binds without
+      # biscuit auth (0.0.0.0 counts as public), so the container gets a static
+      # RFC1918 IP below and the config binds 172.28.0.2:8227. The HOST bind
+      # stays loopback-only — never expose this beyond the machine (§9).
       - "127.0.0.1:8227:8227"
+    networks:
+      default:
+        ipv4_address: 172.28.0.2
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
