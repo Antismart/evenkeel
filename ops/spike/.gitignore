@@ -1,0 +1,4 @@
+# Node data dir contains the private key (ckb/key) and the node DB. Never commit.
+fiber-node/
+# Contains FIBER_SECRET_KEY_PASSWORD.
+.env

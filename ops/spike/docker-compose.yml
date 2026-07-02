@@ -1,0 +1,22 @@
+# Phase 0 spike: single FNN testnet (Pudge) node.
+# Run ./setup-fnn.sh first — it generates the key, seeds the patched config,
+# and creates .env. Do not `docker compose up` from a bare clone.
+#
+# Pinned to v0.8.1 (latest v0.8.x release; architecture targets FNN v0.8.x).
+services:
+  fnn:
+    image: nervos/fiber:v0.8.1
+    container_name: evenkeel-spike-fnn
+    restart: unless-stopped
+    environment:
+      # Required by the image entrypoint; encrypts the key in ./fiber-node/ckb/key.
+      FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?run setup-fnn.sh to create .env}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ./fiber-node:/fiber
+    ports:
+      - "8228:8228" # Fiber P2P
+      # RPC can spend funds. The in-container bind is 0.0.0.0:8227 (patched by
+      # setup-fnn.sh so the port mapping works), but the HOST bind stays
+      # loopback-only — never expose this beyond the machine (architecture §9).
+      - "127.0.0.1:8227:8227"
