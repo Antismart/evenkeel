@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/evenkeel-core",
+    "crates/evenkeel-node",
+    "crates/evenkeel-store",
+    "crates/evenkeel-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Antismart/evenkeel"
+
+[workspace.dependencies]
+evenkeel-core = { path = "crates/evenkeel-core" }
+evenkeel-node = { path = "crates/evenkeel-node" }
+evenkeel-store = { path = "crates/evenkeel-store" }
+
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+async-trait = "0.1"
+
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+
+axum = "0.8"
+prometheus = "0.14"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+proptest = "1"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

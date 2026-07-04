@@ -1,0 +1,23 @@
+[package]
+name = "evenkeel-node"
+description = "FiberRpc trait with RealNode (FNN JSON-RPC via reqwest) and MockNode (scripted, fault-injectable) implementations."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+evenkeel-core = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

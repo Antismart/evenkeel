@@ -1,0 +1,17 @@
+[package]
+name = "evenkeel-store"
+description = "Persistence: channel snapshot time-series and (later phases) action log, policy, fee ledger."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+evenkeel-core = { workspace = true }
+thiserror = { workspace = true }
+sqlx = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

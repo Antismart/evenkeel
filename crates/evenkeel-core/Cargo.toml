@@ -1,0 +1,17 @@
+[package]
+name = "evenkeel-core"
+description = "Pure decision core: health classification, drift detection, planning. No I/O."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true
