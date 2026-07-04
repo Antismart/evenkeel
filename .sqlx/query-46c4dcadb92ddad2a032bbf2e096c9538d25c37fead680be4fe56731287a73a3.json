@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT channel_id, peer, asset,\n                   local_balance::text        AS \"local_balance!\",\n                   remote_balance::text       AS \"remote_balance!\",\n                   offered_tlc_balance::text  AS \"offered_tlc_balance!\",\n                   received_tlc_balance::text AS \"received_tlc_balance!\",\n                   ready, at_ms\n            FROM channel_snapshots\n            WHERE node_id = $1 AND at_ms >= $2\n            ORDER BY channel_id, at_ms ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "peer",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "asset",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_balance!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "remote_balance!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "offered_tlc_balance!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "received_tlc_balance!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "ready",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "at_ms",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "46c4dcadb92ddad2a032bbf2e096c9538d25c37fead680be4fe56731287a73a3"
+}
