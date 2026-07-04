@@ -280,6 +280,11 @@ Grafana dashboard JSON ships in `ops/`. Structured `tracing` throughout with `in
 - **Green:** full plan below.
 - **Red (routes unfindable):** pivot to advisory + simulation demo. Written down now so it's a decision, not a scramble.
 
+**Prep-week outcome (2026-07-02): GREEN.** A real 100 CKB circular self-payment settled on Pudge testnet with actual fee exactly matching the dry-run quote; evidence in `docs/spike-notes.md`. Two findings bind the plan below:
+
+1. **No 0.8.x Docker image is published upstream** (Docker Hub/GHCR publishing for `nervos/fiber` started at 0.9.0-rc). Any compose file shipping an FNN service must build v0.8.x from source via the repo's own Dockerfile (as `ops/spike/setup-fnn.sh` does) or reference a locally built image. This supersedes the implicit assumption that a pinned upstream image exists.
+2. **Testnet peer/route quality is the dominant friction** (peers failing the Init handshake, unreachable announced addresses, fragmented graph) — reaffirming ADR-6: the MockNode is the primary dev/demo environment, testnet the smoke test.
+
 **Days 1–4 — spine:** `FiberRpc` trait + Real/Mock impls; poller; snapshots; health engine with property tests; `/metrics`; dashboard skeleton with channel cards + drift charts.
 **Days 5–9 — money path:** planner; executor state machine with reconciliation; advisory flow end-to-end (propose → show dry-run fee → click → settle → log). MockNode scenario suite green.
 **Days 10–12 — autopilot + simulation:** policy engine, opt-in autopilot with budgets; 24h simulation harness producing the with/without chart.
