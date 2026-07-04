@@ -23,27 +23,62 @@ Built for the "Gone in 60ms" Fiber Infrastructure Hackathon (Category 3: Liquidi
 | Phase | Scope | State |
 |---|---|---|
 | 0 — Testnet gate | Prove a real circular self-payment settles on Pudge testnet | ✅ **GREEN** ([evidence](docs/spike-notes.md)) |
-| 1 — Monitoring spine | Poller, usable-liquidity health engine, drift detection, `/metrics`, dashboard | ▶ next |
+| 1 — Monitoring spine | Poller, usable-liquidity health engine, drift detection, `/metrics`, dashboard | ✅ done |
 | 2 — Money path | Planner, serialized executor state machine, advisory flow, fee ledger | ⏳ |
 | 3 — Autopilot + simulation | Opt-in autopilot with budgets; deterministic 24h simulation harness | ⏳ |
 | 4 — Ship | Hosted demo, video, submission | ⏳ |
 
 The authoritative design is [`docs/architecture.md`](docs/architecture.md) — system shape, decision core, executor state machine, failure handling, and the ADRs behind every non-obvious choice.
 
-## What's here now
+## Quickstart
+
+One command, no Fiber node, no tokens (the MockNode demo scenario, ADR-6):
+
+```sh
+docker compose up
+# dashboard: http://localhost:3000   API + /metrics: http://localhost:3030
+```
+
+You get three scripted channels — healthy, steadily draining (watch it classify
+`depleting` from drift before it's actually depleted), and saturated — with live
+sparklines and Prometheus gauges. Against a real node: set
+`EVENKEEL_NODE_MODE=real` and run with `--profile testnet` (builds FNN v0.8.1
+from source; see comments in `docker-compose.yml`).
+
+### Development
+
+```sh
+docker run -d --name evenkeel-dev-pg -p 127.0.0.1:5433:5432 \
+  -e POSTGRES_PASSWORD=evenkeel -e POSTGRES_USER=evenkeel -e POSTGRES_DB=evenkeel postgres:16-alpine
+export DATABASE_URL=postgres://evenkeel:evenkeel@127.0.0.1:5433/evenkeel
+cargo test --workspace     # property tests included; store tests need DATABASE_URL
+cargo run -p evenkeel-server                    # mock mode on :3030
+cd dashboard && pnpm install && pnpm dev        # dashboard on :3000
+```
+
+Builds work without a database (`SQLX_OFFLINE=true`, `.sqlx` is committed).
+
+## Repository layout
 
 ```
-ops/spike/        Phase 0 spike: FNN v0.8.1 testnet node (docker compose,
-                  built from source — no 0.8.x images are published upstream)
-                  + fnn-rpc.sh, a manual JSON-RPC driver for circular rebalances
+crates/
+  evenkeel-core/    pure decision core: usable liquidity, health classes, drift
+                    (no I/O; property-tested)
+  evenkeel-node/    FiberRpc trait; RealNode (FNN JSON-RPC) + MockNode (scripted,
+                    fault-injectable — the dev/CI/demo environment, ADR-6)
+  evenkeel-store/   Postgres snapshot time-series (u128-exact NUMERIC columns)
+  evenkeel-server/  serialized control loop, REST API, Prometheus /metrics
+dashboard/          Nuxt 3 operator dashboard: channel cards, drift sparklines,
+                    staleness banner
+migrations/         sqlx migrations
+ops/spike/          Phase 0 spike: standalone FNN testnet node + fnn-rpc.sh,
+                    a manual JSON-RPC driver for circular rebalances
 docs/
-  architecture.md The design. Read this first.
-  spike-notes.md  Phase 0 gate evidence: what ran, what it cost, what broke.
+  architecture.md   The design. Read this first.
+  spike-notes.md    Phase 0 gate evidence: what ran, what it cost, what broke.
 ```
 
-The Rust workspace (`evenkeel-core`, `evenkeel-node`, `evenkeel-store`, `evenkeel-server`) and the Nuxt dashboard land in Phase 1+.
-
-## Try the spike yourself
+## Try the testnet spike yourself
 
 Prereqs: Docker, `curl`, `jq`, `openssl` (optional: `ckb-cli` to print the faucet address).
 

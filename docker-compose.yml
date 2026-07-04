@@ -1,0 +1,92 @@
+# Even Keel — one-command bring-up.
+#
+#   docker compose up                     → mock demo (ADR-6): Postgres +
+#                                           server (MockNode scenario) + dashboard
+#   docker compose --profile testnet up   → additionally builds and runs FNN
+#                                           v0.8.1 from source (§11: no 0.8.x
+#                                           image is published upstream) and
+#                                           points the server at it; set
+#                                           EVENKEEL_NODE_MODE=real and
+#                                           FIBER_SECRET_KEY_PASSWORD in .env,
+#                                           and prepare ops/fnn-data like
+#                                           ops/spike (key + config).
+#
+# Dashboard: http://localhost:3000   API/metrics: http://localhost:3030
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evenkeel
+      POSTGRES_PASSWORD: evenkeel
+      POSTGRES_DB: evenkeel
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evenkeel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  evenkeel-server:
+    build:
+      context: .
+      dockerfile: ops/docker/server.Dockerfile
+    environment:
+      DATABASE_URL: postgres://evenkeel:evenkeel@postgres:5432/evenkeel
+      EVENKEEL_BIND: 0.0.0.0:3030
+      EVENKEEL_NODE_MODE: ${EVENKEEL_NODE_MODE:-mock}
+      EVENKEEL_FNN_URL: http://172.29.0.10:8227
+      EVENKEEL_POLL_INTERVAL_SECS: ${EVENKEEL_POLL_INTERVAL_SECS:-30}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "127.0.0.1:3030:3030"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: dashboard
+      args:
+        NUXT_PUBLIC_API_BASE_URL: http://evenkeel-server:3030
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - evenkeel-server
+
+  # FNN testnet node, opt-in. Built from the upstream repo at v0.8.1 (§11).
+  # The RPC stays inside the compose network — never published to the host
+  # here; use ops/spike for hands-on RPC work (architecture §9).
+  #
+  # v0.8.x refuses "public" RPC binds without biscuit auth and 0.0.0.0 counts
+  # as public, so the container gets a static RFC1918 IP and the config in
+  # ops/fnn-data/config.yml must bind 172.29.0.10:8227 (same arrangement as
+  # ops/spike; EVENKEEL_FNN_URL below matches).
+  fnn:
+    profiles: ["testnet"]
+    build:
+      context: https://github.com/nervosnetwork/fiber.git#v0.8.1
+      dockerfile: docker/Dockerfile
+    environment:
+      # Required when the testnet profile runs; the FNN entrypoint refuses to
+      # start with it empty, so compose does not hard-require it here (that
+      # would break plain mock-mode `docker compose up` too).
+      FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ./ops/fnn-data:/fiber
+    ports:
+      - "8228:8228" # P2P only
+    networks:
+      default:
+        ipv4_address: 172.29.0.10
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  pgdata:
