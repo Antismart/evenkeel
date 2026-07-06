@@ -190,7 +190,10 @@ impl Executor {
         };
 
         self.intent_seq += 1;
-        let intent_id = format!("ek-{now_ms:x}-{:04x}", self.intent_seq);
+        // Node-scoped suffix keeps IDs unique across nodes sharing a database
+        // (and across parallel test executors sharing one clock).
+        let node_tag = &self.node_id[self.node_id.len().saturating_sub(8)..];
+        let intent_id = format!("ek-{now_ms:x}-{:04x}-{node_tag}", self.intent_seq);
         info!(
             intent_id,
             source = %intent.source_channel,

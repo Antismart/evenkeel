@@ -172,6 +172,13 @@ impl MockNode {
         self
     }
 
+    /// Override the node's identity pubkey (scenario tests isolate state per
+    /// test by giving each mock a unique identity).
+    pub fn with_pubkey(mut self, pubkey: impl Into<String>) -> Self {
+        self.pubkey = pubkey.into();
+        self
+    }
+
     /// The demo scenario the server ships with when no FNN is configured:
     /// one healthy channel, one steadily draining toward depletion, one
     /// parked saturated. Gives the planner a real (source, sink) pair.
