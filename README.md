@@ -24,8 +24,8 @@ Built for the "Gone in 60ms" Fiber Infrastructure Hackathon (Category 3: Liquidi
 |---|---|---|
 | 0 — Testnet gate | Prove a real circular self-payment settles on Pudge testnet | ✅ **GREEN** ([evidence](docs/spike-notes.md)) |
 | 1 — Monitoring spine | Poller, usable-liquidity health engine, drift detection, `/metrics`, dashboard | ✅ done |
-| 2 — Money path | Planner, serialized executor state machine, advisory flow, fee ledger | ⏳ |
-| 3 — Autopilot + simulation | Opt-in autopilot with budgets; deterministic 24h simulation harness | ⏳ |
+| 2 — Money path | Planner, serialized executor state machine, advisory flow, fee ledger | ✅ done |
+| 3 — Autopilot + simulation | Opt-in autopilot with budgets; deterministic 24h simulation harness | ▶ next |
 | 4 — Ship | Hosted demo, video, submission | ⏳ |
 
 The authoritative design is [`docs/architecture.md`](docs/architecture.md) — system shape, decision core, executor state machine, failure handling, and the ADRs behind every non-obvious choice.
@@ -41,7 +41,12 @@ docker compose up
 
 You get three scripted channels — healthy, steadily draining (watch it classify
 `depleting` from drift before it's actually depleted), and saturated — with live
-sparklines and Prometheus gauges. Against a real node: set
+sparklines and Prometheus gauges. Once the draining channel dips below target,
+the planner proposes a rebalance: a card appears with the pair, amount, and the
+**exact dry-run fee**; click Approve and watch it move through
+`submitting → confirming → settled` in the action log, with the actual fee
+entering the daily budget ledger. Advisory means exactly that — nothing is ever
+sent without the click (autopilot is Phase 3, opt-in). Against a real node: set
 `EVENKEEL_NODE_MODE=real` and run with `--profile testnet` (builds FNN v0.8.1
 from source; see comments in `docker-compose.yml`).
 
