@@ -7,6 +7,7 @@
 //! ever touches a balance (ADR-7).
 
 pub mod actions;
+pub mod policy;
 
 pub use actions::{ActionRecord, ActionState, TransitionPatch};
 
@@ -60,7 +61,7 @@ fn asset_from_db(s: &str) -> Asset {
     }
 }
 
-fn parse_shannons(field: &str, s: &str) -> Result<Shannons, StoreError> {
+pub(crate) fn parse_shannons(field: &str, s: &str) -> Result<Shannons, StoreError> {
     s.parse::<u128>()
         .map_err(|e| StoreError::Corrupt(format!("{field}={s:?}: {e}")))
 }

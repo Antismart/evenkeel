@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE rebalance_actions\n            SET state = $2,\n                quoted_fee   = COALESCE($3::text::numeric, quoted_fee),\n                actual_fee   = COALESCE($4::text::numeric, actual_fee),\n                payment_hash = COALESCE($5, payment_hash),\n                reason       = COALESCE($6, reason),\n                mode         = COALESCE($7, mode),\n                policy_snapshot = COALESCE($8, policy_snapshot),\n                updated_at_ms = $9\n            WHERE intent_id = $1 AND state = ANY($10)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35f67ad2996f53ee78a22505405dc579b91f20db5fbb04f4eb282ba2e2364f1b"
+}

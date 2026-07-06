@@ -236,6 +236,7 @@ impl Executor {
             actual_fee: None,
             payment_hash: None,
             reason: None,
+            policy_snapshot: None,
             created_at_ms: now_ms,
             updated_at_ms: now_ms,
         };
@@ -526,6 +527,7 @@ impl Executor {
             actual_fee: None,
             payment_hash: None,
             reason: Some(reason),
+            policy_snapshot: None,
             created_at_ms: now_ms,
             updated_at_ms: now_ms,
         };

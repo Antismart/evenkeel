@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT target_ratio_bp,\n                   max_amount_per_action::text AS \"max_amount_per_action!\",\n                   max_fee_per_action::text    AS \"max_fee_per_action!\",\n                   max_fee_per_day::text       AS \"max_fee_per_day!\",\n                   min_benefit_bp_per_ckb_fee, cooldown_ticks,\n                   depleted_below_bp, saturated_above_bp,\n                   drift_bp_per_hour, min_drift_points, autopilot\n            FROM policy\n            WHERE node_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_ratio_bp",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "max_amount_per_action!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_fee_per_action!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_fee_per_day!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "min_benefit_bp_per_ckb_fee",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "cooldown_ticks",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "depleted_below_bp",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 7,
+        "name": "saturated_above_bp",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "drift_bp_per_hour",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "min_drift_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "autopilot",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "62b13f253000c737360440da25ef087b85e3c7444fe82fe93589fd7ad7ece7e0"
+}

@@ -105,6 +105,9 @@ pub struct ActionRecord {
     pub payment_hash: Option<String>,
     /// Rejection/failure/orphan detail.
     pub reason: Option<String>,
+    /// §9 audit trail: the serialized [`evenkeel_core::Policy`] JSON that
+    /// authorized an autopilot execution. `None` for advisory actions.
+    pub policy_snapshot: Option<String>,
     /// Created, ms since epoch.
     pub created_at_ms: u64,
     /// Last transition, ms since epoch.
@@ -144,6 +147,10 @@ pub struct TransitionPatch {
     pub payment_hash: Option<String>,
     /// Set the reason.
     pub reason: Option<String>,
+    /// Set the mode (`advisory` → `autopilot` when autopilot executes).
+    pub mode: Option<String>,
+    /// Set the §9 policy snapshot (autopilot executions only).
+    pub policy_snapshot: Option<String>,
 }
 
 impl Store {
@@ -154,10 +161,10 @@ impl Store {
             INSERT INTO rebalance_actions
                 (intent_id, node_id, asset, source_channel, sink_channel,
                  amount, benefit_bp, state, mode, quoted_fee,
-                 created_at_ms, updated_at_ms)
+                 policy_snapshot, created_at_ms, updated_at_ms)
             VALUES ($1, $2, $3, $4, $5,
                     $6::text::numeric, $7, $8, $9, $10::text::numeric,
-                    $11, $12)
+                    $11, $12, $13)
             "#,
             a.intent_id,
             a.node_id,
@@ -169,6 +176,7 @@ impl Store {
             a.state.as_str(),
             a.mode,
             a.quoted_fee.map(|f| f.to_string()),
+            a.policy_snapshot,
             a.created_at_ms as i64,
             a.updated_at_ms as i64,
         )
@@ -197,8 +205,10 @@ impl Store {
                 actual_fee   = COALESCE($4::text::numeric, actual_fee),
                 payment_hash = COALESCE($5, payment_hash),
                 reason       = COALESCE($6, reason),
-                updated_at_ms = $7
-            WHERE intent_id = $1 AND state = ANY($8)
+                mode         = COALESCE($7, mode),
+                policy_snapshot = COALESCE($8, policy_snapshot),
+                updated_at_ms = $9
+            WHERE intent_id = $1 AND state = ANY($10)
             "#,
             intent_id,
             to.as_str(),
@@ -206,6 +216,8 @@ impl Store {
             patch.actual_fee.map(|f| f.to_string()),
             patch.payment_hash,
             patch.reason,
+            patch.mode,
+            patch.policy_snapshot,
             now_ms as i64,
             &from_states,
         )
@@ -281,7 +293,7 @@ impl Store {
             SELECT intent_id, node_id, asset, source_channel, sink_channel,
                    amount::text AS amount, benefit_bp, state, mode,
                    quoted_fee::text AS quoted_fee, actual_fee::text AS actual_fee,
-                   payment_hash, reason, created_at_ms, updated_at_ms
+                   payment_hash, reason, policy_snapshot, created_at_ms, updated_at_ms
             FROM rebalance_actions
             WHERE node_id = $1 AND {state_filter}
             ORDER BY created_at_ms DESC
@@ -318,6 +330,7 @@ impl Store {
                     actual_fee: parse_opt_shannons("actual_fee", r.get("actual_fee"))?,
                     payment_hash: r.get("payment_hash"),
                     reason: r.get("reason"),
+                    policy_snapshot: r.get("policy_snapshot"),
                     created_at_ms: r.get::<i64, _>("created_at_ms") as u64,
                     updated_at_ms: r.get::<i64, _>("updated_at_ms") as u64,
                 })

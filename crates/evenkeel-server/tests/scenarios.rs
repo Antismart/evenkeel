@@ -254,6 +254,7 @@ async fn crash_recovery_adopts_matching_payment() {
         actual_fee: None,
         payment_hash: None,
         reason: None,
+        policy_snapshot: None,
         created_at_ms: T0,
         updated_at_ms: T0,
     };
@@ -306,6 +307,7 @@ async fn crash_recovery_marks_unmatched_orphan() {
             actual_fee: None,
             payment_hash: None,
             reason: None,
+            policy_snapshot: None,
             created_at_ms: T0,
             updated_at_ms: T0,
         })
@@ -342,6 +344,7 @@ async fn crash_recovery_rejects_stale_priced() {
             actual_fee: None,
             payment_hash: None,
             reason: None,
+            policy_snapshot: None,
             created_at_ms: T0,
             updated_at_ms: T0,
         })

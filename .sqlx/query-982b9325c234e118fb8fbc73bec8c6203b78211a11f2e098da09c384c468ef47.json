@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO policy\n                (node_id, target_ratio_bp,\n                 max_amount_per_action, max_fee_per_action, max_fee_per_day,\n                 min_benefit_bp_per_ckb_fee, cooldown_ticks,\n                 depleted_below_bp, saturated_above_bp,\n                 drift_bp_per_hour, min_drift_points,\n                 autopilot, updated_at_ms)\n            VALUES ($1, $2,\n                    $3::text::numeric, $4::text::numeric, $5::text::numeric,\n                    $6, $7, $8, $9, $10, $11, $12, $13)\n            ON CONFLICT (node_id) DO UPDATE SET\n                target_ratio_bp            = EXCLUDED.target_ratio_bp,\n                max_amount_per_action      = EXCLUDED.max_amount_per_action,\n                max_fee_per_action         = EXCLUDED.max_fee_per_action,\n                max_fee_per_day            = EXCLUDED.max_fee_per_day,\n                min_benefit_bp_per_ckb_fee = EXCLUDED.min_benefit_bp_per_ckb_fee,\n                cooldown_ticks             = EXCLUDED.cooldown_ticks,\n                depleted_below_bp          = EXCLUDED.depleted_below_bp,\n                saturated_above_bp         = EXCLUDED.saturated_above_bp,\n                drift_bp_per_hour          = EXCLUDED.drift_bp_per_hour,\n                min_drift_points           = EXCLUDED.min_drift_points,\n                autopilot                  = EXCLUDED.autopilot,\n                updated_at_ms              = EXCLUDED.updated_at_ms\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int2",
+        "Int2",
+        "Int8",
+        "Int4",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "982b9325c234e118fb8fbc73bec8c6203b78211a11f2e098da09c384c468ef47"
+}
