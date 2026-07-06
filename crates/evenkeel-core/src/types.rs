@@ -20,7 +20,7 @@ pub const BP_SCALE: u128 = 10_000;
 
 /// The asset a channel is denominated in. Rebalances never cross assets
 /// (§5.4), so planners partition by this key before pairing channels.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Asset {
     /// Native CKB.
     Ckb,

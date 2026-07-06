@@ -9,7 +9,11 @@
 //! basis points, 0–10_000 (ADR-7). Floats are display-only and do not exist here.
 
 pub mod health;
+pub mod planner;
+pub mod policy;
 pub mod types;
 
 pub use health::{classify, drift_bp_per_hour, ChannelHealth, HealthClass, HealthThresholds};
+pub use planner::{benefit_bp, plan, CooldownState, RebalanceIntent};
+pub use policy::{accept_priced, Policy, RejectReason, SHANNONS_PER_CKB};
 pub use types::{ratio_bp, Asset, BasisPoints, ChannelSnapshot, Shannons, BP_SCALE};
