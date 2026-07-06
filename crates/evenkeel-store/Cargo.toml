@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 evenkeel-core = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
 sqlx = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }

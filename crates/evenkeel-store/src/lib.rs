@@ -6,6 +6,10 @@
 //! (`$n::text::numeric` in, `::text` out) so no float or 64-bit truncation
 //! ever touches a balance (ADR-7).
 
+pub mod actions;
+
+pub use actions::{ActionRecord, ActionState, TransitionPatch};
+
 use evenkeel_core::{Asset, ChannelSnapshot, Shannons};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -23,12 +27,21 @@ pub enum StoreError {
     /// by a different (buggy or newer) version. Surfaced, never guessed at.
     #[error("corrupt row: {0}")]
     Corrupt(String),
+    /// A state transition found the action in an unexpected state and
+    /// refused to apply — the state machine's integrity guard (§6).
+    #[error("transition to {to} refused for {intent_id}: unexpected current state")]
+    TransitionRefused {
+        /// The action whose transition was refused.
+        intent_id: String,
+        /// The state the caller tried to move to.
+        to: &'static str,
+    },
 }
 
 /// Handle to the Even Keel database.
 #[derive(Debug, Clone)]
 pub struct Store {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 /// Encode an asset for the `asset` column: `ckb` or `udt:<script-json>`.
