@@ -35,7 +35,42 @@ export interface NodeStatus {
   stale: boolean
 }
 
+export type ActionState =
+  | 'planned'
+  | 'priced'
+  | 'submitting'
+  | 'confirming'
+  | 'settled'
+  | 'failed'
+  | 'rejected'
+  | 'stuck'
+  | 'orphan_suspect'
+
+export interface ActionView {
+  intent_id: string
+  asset: string
+  source_channel: string
+  sink_channel: string
+  amount: string
+  benefit_bp: number
+  state: ActionState
+  mode: string
+  quoted_fee: string | null
+  actual_fee: string | null
+  payment_hash: string | null
+  reason: string | null
+  created_at_ms: number
+  updated_at_ms: number
+}
+
+export interface LedgerView {
+  spent_today: string
+  daily_budget: string
+}
+
 export interface Dashboard {
   status: NodeStatus
   channels: ChannelView[]
+  actions: ActionView[]
+  ledger: LedgerView
 }
