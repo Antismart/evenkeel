@@ -41,6 +41,35 @@ hex_mod!(u128_hex, u128);
 hex_mod!(u64_hex, u64);
 hex_mod!(u32_hex, u32);
 
+macro_rules! hex_opt_mod {
+    ($mod_name:ident, $ty:ty) => {
+        /// Serde `with`-module for `Option<int>` as an optional `0x`-hex
+        /// string. Pair with `#[serde(skip_serializing_if = "Option::is_none",
+        /// default)]` on the field.
+        pub mod $mod_name {
+            use super::*;
+
+            /// Serialize `Some(v)` as a `0x`-hex string.
+            pub fn serialize<S: Serializer>(v: &Option<$ty>, s: S) -> Result<S::Ok, S::Error> {
+                match v {
+                    Some(v) => s.serialize_some(&format!("{:#x}", v)),
+                    None => s.serialize_none(),
+                }
+            }
+
+            /// Deserialize a missing/null field or a `0x`-hex string.
+            pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<$ty>, D::Error> {
+                let s = Option::<String>::deserialize(d)?;
+                s.map(|s| parse_hex::<$ty>(&s).map_err(serde::de::Error::custom))
+                    .transpose()
+            }
+        }
+    };
+}
+
+hex_opt_mod!(u128_hex_opt, u128);
+hex_opt_mod!(u64_hex_opt, u64);
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

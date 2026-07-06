@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::error::NodeError;
+use crate::payments::{ListPaymentsParams, ListPaymentsResult, PaymentInfo, SendPaymentParams};
 use crate::rpc_types::{Channel, ListChannelsParams, ListChannelsResult, NodeInfo};
 use crate::FiberRpc;
 
@@ -87,5 +88,24 @@ impl FiberRpc for RealNode {
             .call("list_channels", serde_json::json!([params]))
             .await?;
         Ok(result.channels)
+    }
+
+    async fn send_payment(&self, params: SendPaymentParams) -> Result<PaymentInfo, NodeError> {
+        self.call("send_payment", serde_json::json!([params])).await
+    }
+
+    async fn get_payment(&self, payment_hash: &str) -> Result<PaymentInfo, NodeError> {
+        self.call(
+            "get_payment",
+            serde_json::json!([{ "payment_hash": payment_hash }]),
+        )
+        .await
+    }
+
+    async fn list_payments(
+        &self,
+        params: ListPaymentsParams,
+    ) -> Result<ListPaymentsResult, NodeError> {
+        self.call("list_payments", serde_json::json!([params])).await
     }
 }

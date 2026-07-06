@@ -12,11 +12,16 @@
 pub mod error;
 pub mod hex;
 pub mod mock;
+pub mod payments;
 pub mod real;
 pub mod rpc_types;
 
 pub use error::NodeError;
-pub use mock::{BalanceScript, MockBalances, MockChannelSpec, MockNode};
+pub use mock::{BalanceScript, MockBalances, MockChannelSpec, MockNode, PaymentScript};
+pub use payments::{
+    ListPaymentsParams, ListPaymentsResult, PaymentInfo, PaymentStatus, SendPaymentParams,
+    SessionRoute, SessionRouteNode,
+};
 pub use real::RealNode;
 pub use rpc_types::{Channel, ChannelStateInfo, ListChannelsParams, NodeInfo, CHANNEL_READY};
 
@@ -27,7 +32,19 @@ pub trait FiberRpc: Send + Sync {
     /// `node_info`: identity and counts for the node we manage.
     async fn node_info(&self) -> Result<NodeInfo, NodeError>;
 
-    /// `list_channels`: all channels with balances and TLC locks — the
-    /// poller's whole world in Phase 1.
+    /// `list_channels`: all channels with balances and TLC locks.
     async fn list_channels(&self, params: ListChannelsParams) -> Result<Vec<Channel>, NodeError>;
+
+    /// `send_payment`: price (with `dry_run: true`) or execute a payment.
+    /// The executor never calls this for real without a preceding dry run on
+    /// the same params (rule 6).
+    async fn send_payment(&self, params: SendPaymentParams) -> Result<PaymentInfo, NodeError>;
+
+    /// `get_payment`: settlement tracking for one payment.
+    async fn get_payment(&self, payment_hash: &str) -> Result<PaymentInfo, NodeError>;
+
+    /// `list_payments`: recent payments — the §7 crash-recovery
+    /// reconciliation source.
+    async fn list_payments(&self, params: ListPaymentsParams)
+        -> Result<ListPaymentsResult, NodeError>;
 }
