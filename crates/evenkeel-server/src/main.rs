@@ -1,22 +1,19 @@
 //! Even Keel server: Axum REST API for the dashboard, Prometheus `/metrics`,
-//! and the single serialized control loop (poll → classify → store → expose).
-
-mod api;
-mod config;
-mod control;
-mod metrics;
-mod state;
+//! and the single serialized control loop (poll → classify → store → plan →
+//! execute-at-most-one → log).
 
 use std::sync::Arc;
 
+use evenkeel_core::Policy;
 use evenkeel_node::{FiberRpc, MockNode, RealNode};
+use evenkeel_server::api::{router, ApiState};
+use evenkeel_server::config::{Config, NodeMode};
+use evenkeel_server::executor::Approvals;
+use evenkeel_server::metrics::Metrics;
+use evenkeel_server::state::SharedDashboard;
+use evenkeel_server::control;
 use evenkeel_store::Store;
 use tracing::info;
-
-use crate::api::{router, ApiState};
-use crate::config::{Config, NodeMode};
-use crate::metrics::Metrics;
-use crate::state::SharedDashboard;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +41,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = Store::connect(&config.database_url).await?;
     let dashboard: SharedDashboard = SharedDashboard::default();
     let metrics = Arc::new(Metrics::new()?);
+    let approvals: Approvals = Approvals::default();
+    // Phase 2 runs the default policy (advisory only); operator-editable
+    // policy arrives with the Phase 3 policy engine.
+    let policy = Policy::default();
 
     tokio::spawn(control::run(
         config.clone(),
@@ -51,9 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         store,
         dashboard.clone(),
         metrics.clone(),
+        approvals.clone(),
+        policy,
     ));
 
-    let app = router(ApiState { dashboard, metrics });
+    let app = router(ApiState { dashboard, metrics, approvals });
     let listener = tokio::net::TcpListener::bind(&config.bind).await?;
     info!(addr = %config.bind, "API listening");
     axum::serve(listener, app)

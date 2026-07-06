@@ -5,9 +5,9 @@
 //! observability projections, never decision inputs (ADR-7 keeps floats
 //! display-only, and this is display).
 
-use prometheus::{GaugeVec, IntGauge, Opts, Registry, TextEncoder};
+use prometheus::{GaugeVec, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
 
-/// All Phase 1 gauges plus their registry.
+/// All §10 gauges/counters plus their registry.
 #[derive(Debug)]
 pub struct Metrics {
     registry: Registry,
@@ -21,6 +21,14 @@ pub struct Metrics {
     pub rpc_up: IntGauge,
     /// `evenkeel_snapshot_age_seconds` — age of the newest snapshot.
     pub snapshot_age_seconds: IntGauge,
+    /// `evenkeel_rebalance_actions_total{result,mode}` — terminal outcomes.
+    pub actions_total: IntCounterVec,
+    /// `evenkeel_rebalance_fee_shannons_total` — settled actual fees.
+    pub fee_total: IntCounter,
+    /// `evenkeel_fee_budget_remaining_shannons` — today's remaining budget.
+    pub budget_remaining: IntGauge,
+    /// `evenkeel_action_state{state}` — non-terminal action visibility.
+    pub action_state: GaugeVec,
 }
 
 impl Metrics {
@@ -42,14 +50,65 @@ impl Metrics {
         let rpc_up = IntGauge::new("evenkeel_rpc_up", "1 when the last FNN poll succeeded")?;
         let snapshot_age_seconds =
             IntGauge::new("evenkeel_snapshot_age_seconds", "Age of the newest snapshot")?;
+        let actions_total = IntCounterVec::new(
+            Opts::new("evenkeel_rebalance_actions_total", "Rebalance action outcomes"),
+            &["result", "mode"],
+        )?;
+        let fee_total = IntCounter::new(
+            "evenkeel_rebalance_fee_shannons_total",
+            "Total settled rebalance fees (actual, Shannons)",
+        )?;
+        let budget_remaining = IntGauge::new(
+            "evenkeel_fee_budget_remaining_shannons",
+            "Remaining daily fee budget (Shannons)",
+        )?;
+        let action_state = GaugeVec::new(
+            Opts::new("evenkeel_action_state", "Non-terminal actions by state"),
+            &["state"],
+        )?;
 
         registry.register(Box::new(usable_ratio.clone()))?;
         registry.register(Box::new(channels_by_state.clone()))?;
         registry.register(Box::new(drift_slope.clone()))?;
         registry.register(Box::new(rpc_up.clone()))?;
         registry.register(Box::new(snapshot_age_seconds.clone()))?;
+        registry.register(Box::new(actions_total.clone()))?;
+        registry.register(Box::new(fee_total.clone()))?;
+        registry.register(Box::new(budget_remaining.clone()))?;
+        registry.register(Box::new(action_state.clone()))?;
 
-        Ok(Self { registry, usable_ratio, channels_by_state, drift_slope, rpc_up, snapshot_age_seconds })
+        Ok(Self {
+            registry,
+            usable_ratio,
+            channels_by_state,
+            drift_slope,
+            rpc_up,
+            snapshot_age_seconds,
+            actions_total,
+            fee_total,
+            budget_remaining,
+            action_state,
+        })
+    }
+
+    /// Count a terminal action outcome.
+    pub fn observe_action(&self, result: &str, mode: &str) {
+        self.actions_total.with_label_values(&[result, mode]).inc();
+    }
+
+    /// Add a settled actual fee to the running total. Saturates at u64 —
+    /// far beyond any plausible cumulative fee, and metrics are display-only.
+    pub fn add_fee(&self, fee: u128) {
+        self.fee_total.inc_by(fee.min(u64::MAX as u128) as u64);
+    }
+
+    /// Publish the set of non-terminal action states (one gauge point per
+    /// state currently occupied).
+    pub fn set_action_states<'a>(&self, states: impl Iterator<Item = &'a str>) {
+        self.action_state.reset();
+        for s in states {
+            self.action_state.with_label_values(&[s]).inc();
+        }
     }
 
     /// Render the registry in Prometheus text exposition format.

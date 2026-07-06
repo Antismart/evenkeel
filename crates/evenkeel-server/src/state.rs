@@ -61,6 +61,49 @@ pub struct NodeStatus {
     pub stale: bool,
 }
 
+/// One rebalance action for the dashboard: the proposal card (state
+/// `priced`) and the action log. Money fields are decimal strings (ADR-7).
+#[derive(Debug, Clone, Serialize)]
+pub struct ActionView {
+    /// Correlation ID; the approve/reject API key.
+    pub intent_id: String,
+    /// `"ckb"` or `"udt:…"`.
+    pub asset: String,
+    /// Channel funds leave.
+    pub source_channel: String,
+    /// Channel funds arrive.
+    pub sink_channel: String,
+    /// Amount, Shannons as decimal string.
+    pub amount: String,
+    /// Planner benefit in bp.
+    pub benefit_bp: u64,
+    /// Executor state (lowercase, §6 names).
+    pub state: String,
+    /// `advisory` or `autopilot`.
+    pub mode: String,
+    /// Dry-run quote, Shannons as decimal string.
+    pub quoted_fee: Option<String>,
+    /// Settled actual fee, Shannons as decimal string.
+    pub actual_fee: Option<String>,
+    /// Payment hash once known.
+    pub payment_hash: Option<String>,
+    /// Rejection/failure detail.
+    pub reason: Option<String>,
+    /// Created, ms since epoch.
+    pub created_at_ms: u64,
+    /// Last transition, ms since epoch.
+    pub updated_at_ms: u64,
+}
+
+/// Daily fee ledger summary for the header.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LedgerView {
+    /// Spent today (settled actual fees), Shannons as decimal string.
+    pub spent_today: String,
+    /// Daily budget, Shannons as decimal string.
+    pub daily_budget: String,
+}
+
 /// The whole dashboard payload, swapped atomically each tick.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Dashboard {
@@ -68,6 +111,10 @@ pub struct Dashboard {
     pub status: NodeStatus,
     /// Per-channel views, stable order (by channel id).
     pub channels: Vec<ChannelView>,
+    /// Recent rebalance actions, newest first (proposals + log).
+    pub actions: Vec<ActionView>,
+    /// Fee budget picture.
+    pub ledger: LedgerView,
 }
 
 /// Shared handle the loop writes and the API reads.

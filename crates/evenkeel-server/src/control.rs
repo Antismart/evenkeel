@@ -5,14 +5,17 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use evenkeel_core::{classify, ChannelSnapshot, HealthThresholds};
+use evenkeel_core::{classify, ChannelHealth, ChannelSnapshot, Policy};
 use evenkeel_node::{FiberRpc, ListChannelsParams};
-use evenkeel_store::Store;
+use evenkeel_store::{ActionRecord, Store};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
+use crate::executor::{Approvals, Executor};
 use crate::metrics::Metrics;
-use crate::state::{ChannelView, Dashboard, HistoryPoint, NodeStatus, SharedDashboard};
+use crate::state::{
+    ActionView, ChannelView, Dashboard, HistoryPoint, LedgerView, NodeStatus, SharedDashboard,
+};
 
 /// Milliseconds since the UNIX epoch, from the wall clock. The core never
 /// reads a clock; the loop stamps time at the boundary.
@@ -21,17 +24,21 @@ fn now_ms() -> u64 {
 }
 
 /// Run the poll loop forever. Errors degrade (stale data + `rpc_up 0`),
-/// they never kill the loop (§7).
+/// they never kill the loop (§7). One tick = poll → classify → publish →
+/// executor step (plan/price/confirm), strictly serialized (ADR-2).
 pub async fn run(
     config: Config,
     node: Arc<dyn FiberRpc>,
     store: Store,
     dashboard: SharedDashboard,
     metrics: Arc<Metrics>,
+    approvals: Approvals,
+    policy: Policy,
 ) {
-    let thresholds = HealthThresholds::default();
+    let thresholds = policy.thresholds.clone();
     let mut node_pubkey = String::new();
     let mut node_version = String::new();
+    let mut executor: Option<Executor> = None;
     let mut ticker = tokio::time::interval(config.poll_interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -53,6 +60,21 @@ pub async fn run(
                     continue;
                 }
             }
+        }
+
+        // The executor exists from the moment identity is known; startup
+        // reconciliation (§7) runs exactly once, before any planning.
+        if executor.is_none() {
+            let mut ex = Executor::new(
+                node.clone(),
+                store.clone(),
+                policy.clone(),
+                node_pubkey.clone(),
+                approvals.clone(),
+                metrics.clone(),
+            );
+            ex.reconcile_on_startup(now_ms()).await;
+            executor = Some(ex);
         }
 
         let rpc_result = node.list_channels(ListChannelsParams::default()).await;
@@ -91,6 +113,7 @@ pub async fn run(
         }
 
         let mut views = Vec::new();
+        let mut healths: Vec<ChannelHealth> = Vec::new();
         metrics.channels_by_state.reset();
         for (channel_id, series) in &by_channel {
             let Some(newest) = series.last() else { continue };
@@ -132,12 +155,34 @@ pub async fn run(
                     .iter()
                     .map(|s| HistoryPoint { at_ms: s.at_ms, usable_ratio_bp: s.usable_ratio_bp() })
                     .collect(),
-                health,
+                health: health.clone(),
             });
+            healths.push(health);
         }
 
         metrics.rpc_up.set(1);
         metrics.snapshot_age_seconds.set(0);
+
+        // The money half of the tick: at most one action progresses (ADR-2).
+        let (actions, ledger) = if let Some(ex) = executor.as_mut() {
+            ex.tick(&snapshots, &healths, at_ms).await;
+            let spent = ex.spent_today(at_ms).await;
+            metrics
+                .budget_remaining
+                .set(policy.max_fee_per_day.saturating_sub(spent).min(i64::MAX as u128) as i64);
+            let actions = store
+                .recent_actions(&node_pubkey, 25)
+                .await
+                .map(|list| list.into_iter().map(to_action_view).collect())
+                .unwrap_or_default();
+            let ledger = LedgerView {
+                spent_today: spent.to_string(),
+                daily_budget: policy.max_fee_per_day.to_string(),
+            };
+            (actions, ledger)
+        } else {
+            (Vec::new(), LedgerView::default())
+        };
 
         let mut d = dashboard.write().await;
         *d = Dashboard {
@@ -149,7 +194,32 @@ pub async fn run(
                 stale: false,
             },
             channels: views,
+            actions,
+            ledger,
         };
+    }
+}
+
+/// Project a store row into the dashboard shape (money as decimal strings).
+fn to_action_view(a: ActionRecord) -> ActionView {
+    ActionView {
+        intent_id: a.intent_id,
+        asset: match &a.asset {
+            evenkeel_core::Asset::Ckb => "ckb".to_string(),
+            evenkeel_core::Asset::Udt(s) => format!("udt:{s}"),
+        },
+        source_channel: a.source_channel,
+        sink_channel: a.sink_channel,
+        amount: a.amount.to_string(),
+        benefit_bp: a.benefit_bp,
+        state: a.state.as_str().to_string(),
+        mode: a.mode,
+        quoted_fee: a.quoted_fee.map(|f| f.to_string()),
+        actual_fee: a.actual_fee.map(|f| f.to_string()),
+        payment_hash: a.payment_hash,
+        reason: a.reason,
+        created_at_ms: a.created_at_ms,
+        updated_at_ms: a.updated_at_ms,
     }
 }
 
