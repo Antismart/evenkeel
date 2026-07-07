@@ -34,6 +34,7 @@ fn action(node: &str, intent: &str, at_ms: u64) -> ActionRecord {
         actual_fee: None,
         payment_hash: None,
         reason: None,
+        policy_snapshot: None,
         created_at_ms: at_ms,
         updated_at_ms: at_ms,
     }

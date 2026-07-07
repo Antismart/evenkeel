@@ -5,13 +5,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use evenkeel_core::{classify, ChannelHealth, ChannelSnapshot, Policy};
+use evenkeel_core::{classify, ChannelHealth, ChannelSnapshot};
 use evenkeel_node::{FiberRpc, ListChannelsParams};
 use evenkeel_store::{ActionRecord, Store};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
-use crate::executor::{Approvals, Executor};
+use crate::executor::{Approvals, Executor, PolicyState, SharedPolicy};
 use crate::metrics::Metrics;
 use crate::state::{
     ActionView, ChannelView, Dashboard, HistoryPoint, LedgerView, NodeStatus, SharedDashboard,
@@ -33,9 +33,8 @@ pub async fn run(
     dashboard: SharedDashboard,
     metrics: Arc<Metrics>,
     approvals: Approvals,
-    policy: Policy,
+    policy: SharedPolicy,
 ) {
-    let thresholds = policy.thresholds.clone();
     let mut node_pubkey = String::new();
     let mut node_version = String::new();
     let mut executor: Option<Executor> = None;
@@ -63,8 +62,22 @@ pub async fn run(
         }
 
         // The executor exists from the moment identity is known; startup
-        // reconciliation (§7) runs exactly once, before any planning.
+        // reconciliation (§7) runs exactly once, before any planning. The
+        // operator's persisted policy (keyed by the pubkey we just learned)
+        // replaces the boot defaults first — saved bounds and the autopilot
+        // flag survive restarts. No row → run defaults, write nothing.
         if executor.is_none() {
+            match store.load_policy(&node_pubkey).await {
+                Ok(Some((p, autopilot))) => {
+                    info!(autopilot, "loaded persisted policy");
+                    let mut ps = policy.lock().unwrap_or_else(|e| e.into_inner());
+                    *ps = PolicyState { policy: p, autopilot };
+                }
+                Ok(None) => info!("no persisted policy; running defaults (advisory)"),
+                Err(e) => {
+                    error!(error = %e, "cannot load persisted policy; running defaults (advisory)");
+                }
+            }
             let mut ex = Executor::new(
                 node.clone(),
                 store.clone(),
@@ -112,6 +125,10 @@ pub async fn run(
             by_channel.entry(s.channel_id.clone()).or_default().push(s);
         }
 
+        // One coherent policy read per tick — the API may change thresholds
+        // or budgets between ticks and they apply live, without a restart.
+        let live = policy.lock().unwrap_or_else(|e| e.into_inner()).clone();
+
         let mut views = Vec::new();
         let mut healths: Vec<ChannelHealth> = Vec::new();
         metrics.channels_by_state.reset();
@@ -122,7 +139,7 @@ pub async fn run(
             let Some(current) = snapshots.iter().find(|s| &s.channel_id == channel_id) else {
                 continue;
             };
-            let Some(health) = classify(series, &thresholds) else { continue };
+            let Some(health) = classify(series, &live.policy.thresholds) else { continue };
 
             let asset = match &current.asset {
                 evenkeel_core::Asset::Ckb => "ckb".to_string(),
@@ -167,9 +184,10 @@ pub async fn run(
         let (actions, ledger) = if let Some(ex) = executor.as_mut() {
             ex.tick(&snapshots, &healths, at_ms).await;
             let spent = ex.spent_today(at_ms).await;
+            let daily_budget = live.policy.max_fee_per_day;
             metrics
                 .budget_remaining
-                .set(policy.max_fee_per_day.saturating_sub(spent).min(i64::MAX as u128) as i64);
+                .set(daily_budget.saturating_sub(spent).min(i64::MAX as u128) as i64);
             let actions = store
                 .recent_actions(&node_pubkey, 25)
                 .await
@@ -177,7 +195,7 @@ pub async fn run(
                 .unwrap_or_default();
             let ledger = LedgerView {
                 spent_today: spent.to_string(),
-                daily_budget: policy.max_fee_per_day.to_string(),
+                daily_budget: daily_budget.to_string(),
             };
             (actions, ledger)
         } else {

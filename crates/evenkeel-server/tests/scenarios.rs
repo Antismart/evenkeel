@@ -15,7 +15,7 @@ use evenkeel_node::{
     BalanceScript, FiberRpc, MockBalances, MockChannelSpec, MockNode, PaymentScript,
     SendPaymentParams,
 };
-use evenkeel_server::executor::{Approvals, Executor};
+use evenkeel_server::executor::{Approvals, Executor, SharedPolicy};
 use evenkeel_server::metrics::Metrics;
 use evenkeel_store::{ActionRecord, ActionState, Store, TransitionPatch};
 
@@ -61,6 +61,7 @@ struct Harness {
     node: Arc<MockNode>,
     store: Store,
     approvals: Approvals,
+    policy: SharedPolicy,
     executor: Executor,
     node_id: String,
 }
@@ -71,15 +72,16 @@ impl Harness {
         let node_id = unique(tag);
         let node = imbalanced_mock(&node_id);
         let approvals = Approvals::default();
+        let policy = SharedPolicy::default();
         let executor = Executor::new(
             node.clone(),
             store.clone(),
-            Policy::default(),
+            policy.clone(),
             node_id.clone(),
             approvals.clone(),
             Arc::new(Metrics::new().unwrap()),
         );
-        Some(Self { node, store, approvals, executor, node_id })
+        Some(Self { node, store, approvals, policy, executor, node_id })
     }
 
     async fn observe(&self, at_ms: u64) -> (Vec<ChannelSnapshot>, Vec<ChannelHealth>) {
@@ -254,6 +256,7 @@ async fn crash_recovery_adopts_matching_payment() {
         actual_fee: None,
         payment_hash: None,
         reason: None,
+        policy_snapshot: None,
         created_at_ms: T0,
         updated_at_ms: T0,
     };
@@ -306,6 +309,7 @@ async fn crash_recovery_marks_unmatched_orphan() {
             actual_fee: None,
             payment_hash: None,
             reason: None,
+            policy_snapshot: None,
             created_at_ms: T0,
             updated_at_ms: T0,
         })
@@ -342,6 +346,7 @@ async fn crash_recovery_rejects_stale_priced() {
             actual_fee: None,
             payment_hash: None,
             reason: None,
+            policy_snapshot: None,
             created_at_ms: T0,
             updated_at_ms: T0,
         })
@@ -352,4 +357,75 @@ async fn crash_recovery_rejects_stale_priced() {
     let after = h.only_action().await;
     assert_eq!(after.state, ActionState::Rejected);
     assert!(after.reason.as_deref().unwrap().contains("stale"));
+}
+
+impl Harness {
+    /// Flip the live autopilot flag (what PUT /api/policy does).
+    fn set_autopilot(&self, on: bool) {
+        let mut ps = self.policy.lock().unwrap();
+        ps.autopilot = on;
+    }
+
+    /// Shrink the daily budget on the live policy.
+    fn set_daily_budget(&self, shannons: u128) {
+        let mut ps = self.policy.lock().unwrap();
+        ps.policy.max_fee_per_day = shannons;
+    }
+}
+
+/// Autopilot ON: a priced action executes with zero operator interaction,
+/// carries mode='autopilot', and records the §9 policy snapshot.
+#[tokio::test]
+async fn autopilot_settles_without_operator_and_records_snapshot() {
+    let Some(mut h) = Harness::new("auto").await else { return };
+    h.set_autopilot(true);
+
+    h.tick(T0).await; // plan + price
+    assert_eq!(h.only_action().await.state, ActionState::Priced);
+    h.tick(T0 + 1_000).await; // autopilot approves + submits → confirming
+    h.tick(T0 + 2_000).await; // settles
+
+    let settled = h.only_action().await;
+    assert_eq!(settled.state, ActionState::Settled);
+    assert_eq!(settled.mode, "autopilot");
+    let snapshot = settled.policy_snapshot.unwrap();
+    let recorded: Policy = serde_json::from_str(&snapshot).unwrap();
+    assert_eq!(recorded, Policy::default());
+    assert!(h.spent_today(T0 + 2_000).await > 0);
+}
+
+/// Autopilot OFF (the default): the priced action waits indefinitely for the
+/// operator — advisory is the default posture (ADR-4).
+#[tokio::test]
+async fn autopilot_off_by_default_leaves_action_priced() {
+    let Some(mut h) = Harness::new("nodefault").await else { return };
+    h.tick(T0).await;
+    for i in 1..5u64 {
+        h.tick(T0 + i * 1_000).await;
+    }
+    let action = h.only_action().await;
+    assert_eq!(action.state, ActionState::Priced);
+    assert_eq!(h.spent_today(T0 + 5_000).await, 0);
+    assert_eq!(h.node.payment_count(), 0);
+}
+
+/// Autopilot respects the daily budget at execution time: with the budget
+/// gone, the action is rejected, never sent.
+#[tokio::test]
+async fn autopilot_respects_daily_budget() {
+    let Some(mut h) = Harness::new("autobudget").await else { return };
+    h.set_autopilot(true);
+
+    h.tick(T0).await; // priced (quote 0.4 CKB for the 400 CKB move)
+    assert_eq!(h.only_action().await.state, ActionState::Priced);
+
+    // Budget collapses between pricing and execution.
+    h.set_daily_budget(1);
+    h.tick(T0 + 1_000).await;
+
+    let rejected = h.only_action().await;
+    assert_eq!(rejected.state, ActionState::Rejected, "{rejected:?}");
+    assert!(rejected.reason.as_deref().unwrap().contains("at execution"));
+    assert_eq!(h.node.payment_count(), 0);
+    assert_eq!(h.spent_today(T0 + 1_000).await, 0);
 }

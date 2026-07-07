@@ -39,6 +39,8 @@ const ledger = computed(() => data.value?.ledger ?? null)
     />
 
     <main>
+      <PolicyPanel />
+
       <ProposalCard v-if="proposal" :action="proposal" @decided="refresh" />
 
       <div v-if="channels.length" class="grid">
