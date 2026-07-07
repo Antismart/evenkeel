@@ -24,7 +24,7 @@ funds, no node): any Docker host works.
 
 ```sh
 git clone https://github.com/Antismart/evenkeel && cd evenkeel
-EVENKEEL_POLL_INTERVAL_SECS=10 docker compose up -d
+EVENKEEL_NODE_MODE=mock EVENKEEL_POLL_INTERVAL_SECS=10 docker compose up -d
 ```
 
 Reverse-proxy `:3000` (dashboard) behind TLS; `:3030` (API/metrics) binds
@@ -43,7 +43,8 @@ public testnet peer health — the mock demo is the deterministic fallback
 
 ```sh
 git clone <repo> fresh && cd fresh
-docker compose up -d                      # stack healthy, proposal appears
+EVENKEEL_NODE_MODE=mock docker compose up -d   # clean-clone gate: stack healthy, proposal appears
+# live gate: docs/live-demo.md end-to-end (requires the funded testnet node)
 export DATABASE_URL=postgres://evenkeel:evenkeel@127.0.0.1:5433/evenkeel  # dev pg
 cargo test --workspace                    # 75 passing
 cargo clippy --workspace --all-targets   # clean

@@ -1,15 +1,22 @@
-# Even Keel — one-command bring-up.
+# Even Keel — bring-up. LIVE MODE IS THE DEFAULT.
 #
-#   docker compose up                     → mock demo (ADR-6): Postgres +
-#                                           server (MockNode scenario) + dashboard
-#   docker compose --profile testnet up   → additionally builds and runs FNN
-#                                           v0.8.1 from source (§11: no 0.8.x
-#                                           image is published upstream) and
-#                                           points the server at it; set
-#                                           EVENKEEL_NODE_MODE=real and
-#                                           FIBER_SECRET_KEY_PASSWORD in .env,
-#                                           and prepare ops/fnn-data like
-#                                           ops/spike (key + config).
+#   docker compose up
+#       → Postgres + server (REAL mode) + dashboard. Expects a live FNN RPC at
+#         EVENKEEL_FNN_URL (default: the host's ops/spike node via the Docker
+#         host gateway). Stand that node up first: cd ops/spike && ./setup-fnn.sh
+#         No node reachable → Even Keel serves the §7 degraded picture
+#         (stale banner, rpc_up 0) until one appears; nothing crashes.
+#
+#   EVENKEEL_NODE_MODE=mock docker compose up
+#       → the scripted MockNode demo (ADR-6): zero prerequisites, no tokens,
+#         deterministic. The clean-clone one-command path.
+#
+#   docker compose --profile testnet up
+#       → additionally builds and runs FNN v0.8.1 from source (§11: no 0.8.x
+#         image is published upstream) inside this compose network; set
+#         FIBER_SECRET_KEY_PASSWORD in .env, prepare ops/fnn-data like
+#         ops/spike (key + config bound to 172.29.0.10:8227), and set
+#         EVENKEEL_FNN_URL=http://172.29.0.10:8227.
 #
 # Dashboard: http://localhost:3000   API/metrics: http://localhost:3030
 
@@ -35,10 +42,16 @@ services:
     environment:
       DATABASE_URL: postgres://evenkeel:evenkeel@postgres:5432/evenkeel
       EVENKEEL_BIND: 0.0.0.0:3030
-      EVENKEEL_NODE_MODE: ${EVENKEEL_NODE_MODE:-mock}
-      EVENKEEL_FNN_URL: http://172.29.0.10:8227
+      EVENKEEL_NODE_MODE: ${EVENKEEL_NODE_MODE:-real}
+      # Default reaches an FNN on the host (the ops/spike node). Override to
+      # http://172.29.0.10:8227 for the in-compose testnet profile.
+      EVENKEEL_FNN_URL: ${EVENKEEL_FNN_URL:-http://host.docker.internal:8227}
       EVENKEEL_POLL_INTERVAL_SECS: ${EVENKEEL_POLL_INTERVAL_SECS:-30}
       RUST_LOG: ${RUST_LOG:-info}
+    extra_hosts:
+      # Docker Desktop resolves host.docker.internal natively; this line makes
+      # the same name work on Linux engines.
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:3030:3030"
     depends_on:

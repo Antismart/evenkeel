@@ -22,12 +22,8 @@ cd ops/spike && docker start evenkeel-spike-fnn || ./setup-fnn.sh
 ./fnn-rpc.sh info          # sanity: version 0.8.1, pubkey 0285…3cef
 ./fnn-rpc.sh channels      # both channels ChannelReady
 
-# 2. Even Keel against it, real mode:
-cd ../.. && export DATABASE_URL=postgres://evenkeel:evenkeel@127.0.0.1:5433/evenkeel
-docker start evenkeel-dev-pg
-EVENKEEL_NODE_MODE=real EVENKEEL_FNN_URL=http://127.0.0.1:8227 \
-  EVENKEEL_POLL_INTERVAL_SECS=5 cargo run -p evenkeel-server --release &
-(cd dashboard && pnpm dev &)          # or the built .output server
+# 2. Even Keel against it — live mode is the compose default:
+cd ../.. && EVENKEEL_POLL_INTERVAL_SECS=5 docker compose up -d
 open http://localhost:3000            # real channels, real balances
 ```
 

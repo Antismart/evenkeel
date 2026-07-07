@@ -32,26 +32,39 @@ The authoritative design is [`docs/architecture.md`](docs/architecture.md) — s
 
 ## Quickstart
 
-One command, no Fiber node, no tokens (the MockNode demo scenario, ADR-6):
+**Live (the default).** Even Keel manages a real Fiber node. Stand one up on
+Pudge testnet (funded key, open channels — `ops/spike/` automates it), then:
 
 ```sh
+cd ops/spike && ./setup-fnn.sh && cd ../..   # once: your testnet node
 docker compose up
 # dashboard: http://localhost:3000   API + /metrics: http://localhost:3030
 ```
 
-You get three scripted channels — healthy, steadily draining (watch it classify
-`depleting` from drift before it's actually depleted), and saturated — with live
-sparklines and Prometheus gauges. Once the draining channel dips below target,
-the planner proposes a rebalance: a card appears with the pair, amount, and the
-**exact dry-run fee**; click Approve and watch it move through
-`submitting → confirming → settled` in the action log, with the actual fee
-entering the daily budget ledger. Advisory is the default — nothing is ever
-sent without the click. The policy panel exposes the **autopilot** switch
-(opt-in, persisted, off by default): flipped on, priced rebalances within
-budget execute unattended, each logged with `mode: autopilot` and the exact
-policy snapshot that authorized it. Against a real node: set
-`EVENKEEL_NODE_MODE=real` and run with `--profile testnet` (builds FNN v0.8.1
-from source; see comments in `docker-compose.yml`).
+The dashboard shows your node's real channels and live balances. When a
+channel crosses the policy thresholds, the planner proposes a rebalance: a
+card appears with the pair, amount, and the **exact dry-run fee quoted by
+your node**; click Approve and watch it move through `submitting →
+confirming → settled` in the action log — a real circular self-payment, with
+the actual fee entering the daily budget ledger. Advisory is the default —
+nothing is ever sent without the click. The policy panel exposes the
+**autopilot** switch (opt-in, persisted, off by default): flipped on, priced
+rebalances within budget execute unattended, each logged with
+`mode: autopilot` and the exact policy snapshot that authorized it.
+No node reachable yet? Even Keel serves a read-only stale-data picture and
+recovers the moment the node appears — it never crashes on an outage.
+
+**Simulated (no node, no tokens, one command).** The same binaries against a
+scripted, deterministic mock node (ADR-6) — three channels: healthy, steadily
+draining (watch it classify `depleting` from drift before it's actually
+depleted), saturated:
+
+```sh
+EVENKEEL_NODE_MODE=mock docker compose up
+```
+
+This is also the CI/test environment and the reproducible fallback if you
+just want to see the product without touching testnet.
 
 ### The simulation (what a day of Even Keel buys you)
 
@@ -139,12 +152,16 @@ The hackathon brief rewards saying this plainly, so:
 - The 24h simulation (`ops/sim/report.html`) replays scripted traffic through
   those same real code paths, deterministically.
 
-**Why the demo defaults to mock:** public Fiber testnet routing is sparse and
-peer quality uneven (documented first-hand in the spike notes — unreachable
-announced addresses, peers failing the Init handshake). The tool runs against
-a real node today (`--profile testnet`), but a reproducible demo should not be
-hostage to testnet weather (ADR-6). The Phase 0 settlement is the proof the
-real path works; the mock is the proof the judgment layer works.
+**Where the mock fits (it is not the demo):** live mode is the default and
+the judged experience. The mock exists because money code must be tested
+before it touches money: it powers the failure-scenario suite and property
+tests in CI (you cannot order a real network to get stuck or crash
+mid-submit), the deterministic 24h simulation, and a token-free
+`EVENKEEL_NODE_MODE=mock` path for anyone evaluating the repo — public
+testnet peer quality is uneven (documented first-hand in the spike notes), and
+a reproducible fallback should not be hostage to testnet weather (ADR-6). The
+live settlements are the proof the real path works; the mock is the proof the
+judgment layer keeps working, continuously.
 
 ## The gap this addresses
 

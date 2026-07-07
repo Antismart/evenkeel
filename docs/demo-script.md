@@ -7,7 +7,9 @@ the "what's real vs simulated" line is spoken out loud (the brief rewards it).
 
 ```sh
 git clone https://github.com/Antismart/evenkeel && cd evenkeel
-EVENKEEL_POLL_INTERVAL_SECS=2 docker compose up -d   # 2s ticks → proposal in ~1 min
+# Scripted mock for a tight, reproducible recording (live is the repo default;
+# for a live-node recording follow docs/live-demo.md instead):
+EVENKEEL_NODE_MODE=mock EVENKEEL_POLL_INTERVAL_SECS=2 docker compose up -d   # 2s ticks → proposal in ~1 min
 open http://localhost:3000
 ```
 

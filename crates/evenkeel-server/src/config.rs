@@ -1,6 +1,8 @@
 //! Environment-driven configuration. Everything has a safe default except the
-//! database; `EVENKEEL_NODE_MODE=mock` is the default so a bare `docker
-//! compose up` demos without a Fiber node (ADR-6).
+//! database. `EVENKEEL_NODE_MODE=real` is the default — Even Keel expects to
+//! manage a live FNN; a missing node degrades to the §7 read-only picture,
+//! never a crash. The scripted MockNode demo (ADR-6) stays one env var away
+//! (`EVENKEEL_NODE_MODE=mock`) for token-free runs, CI, and the simulation.
 
 use std::time::Duration;
 
@@ -48,9 +50,9 @@ fn env_secs(key: &str, default: u64) -> Duration {
 impl Config {
     /// Read configuration from the environment.
     pub fn from_env() -> Self {
-        let node_mode = match env_or("EVENKEEL_NODE_MODE", "mock").to_lowercase().as_str() {
-            "real" => NodeMode::Real,
-            _ => NodeMode::Mock,
+        let node_mode = match env_or("EVENKEEL_NODE_MODE", "real").to_lowercase().as_str() {
+            "mock" => NodeMode::Mock,
+            _ => NodeMode::Real,
         };
         Self {
             node_mode,
