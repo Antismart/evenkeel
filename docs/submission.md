@@ -13,11 +13,11 @@
 | 4 | Design documentation | `docs/architecture.md` — full design + 7 ADRs; `docs/spike-notes.md` — testnet evidence | ✅ |
 | 5 | On-chain / on-network proof | Real circular self-payment settled on Pudge, payment hash `0x5888472682b1b6dbc954c625ae44dd2ff4d1a57a64985d6b3832352d3684cc54`, exact-fee settlement (spike notes) | ✅ |
 | 6 | Demo video | Script ready: `docs/demo-script.md` (~4 min shot list) | ⬜ record |
-| 7 | Hosted demo | Deployment notes below; mock-mode stack is VPS-ready | ⬜ deploy |
+| 7 | **Live demo (mandatory, organizer ruling 2026-07-07)** | `docs/live-demo.md` — judging-window runbook, rehearsed end-to-end: Even Keel settled a real 19.9 CKB rebalance on Pudge (hash `0x47ac455f…`, fee exactly the quote, sink landed on the 80.00% target) | ✅ rehearsed; run during window |
 | 8 | Safety/production judgment | Advisory default (ADR-4), bounded worst case (§4), budgets enforced twice, §7 crash recovery, audit trail with policy snapshots, §8 property tests | ✅ |
 | 9 | Post-hackathon viability | Architecture §12 roadmap (passive fee-policy rebalancing, min-cost-flow, fleet mode, LSP primitives); built on stable v0.8.x APIs | ✅ |
 
-## Hosted demo — deployment notes
+## Hosted demo — deployment notes (secondary to the live demo)
 
 The mock-mode stack is self-contained and safe to host publicly (no keys, no
 funds, no node): any Docker host works.
