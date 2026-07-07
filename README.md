@@ -25,8 +25,8 @@ Built for the "Gone in 60ms" Fiber Infrastructure Hackathon (Category 3: Liquidi
 | 0 — Testnet gate | Prove a real circular self-payment settles on Pudge testnet | ✅ **GREEN** ([evidence](docs/spike-notes.md)) |
 | 1 — Monitoring spine | Poller, usable-liquidity health engine, drift detection, `/metrics`, dashboard | ✅ done |
 | 2 — Money path | Planner, serialized executor state machine, advisory flow, fee ledger | ✅ done |
-| 3 — Autopilot + simulation | Opt-in autopilot with budgets; deterministic 24h simulation harness | ▶ next |
-| 4 — Ship | Hosted demo, video, submission | ⏳ |
+| 3 — Autopilot + simulation | Opt-in autopilot with budgets; deterministic 24h simulation harness | ✅ done |
+| 4 — Ship | Hosted demo, video, submission | ▶ next |
 
 The authoritative design is [`docs/architecture.md`](docs/architecture.md) — system shape, decision core, executor state machine, failure handling, and the ADRs behind every non-obvious choice.
 
@@ -45,10 +45,30 @@ sparklines and Prometheus gauges. Once the draining channel dips below target,
 the planner proposes a rebalance: a card appears with the pair, amount, and the
 **exact dry-run fee**; click Approve and watch it move through
 `submitting → confirming → settled` in the action log, with the actual fee
-entering the daily budget ledger. Advisory means exactly that — nothing is ever
-sent without the click (autopilot is Phase 3, opt-in). Against a real node: set
+entering the daily budget ledger. Advisory is the default — nothing is ever
+sent without the click. The policy panel exposes the **autopilot** switch
+(opt-in, persisted, off by default): flipped on, priced rebalances within
+budget execute unattended, each logged with `mode: autopilot` and the exact
+policy snapshot that authorized it. Against a real node: set
 `EVENKEEL_NODE_MODE=real` and run with `--profile testnet` (builds FNN v0.8.1
 from source; see comments in `docker-compose.yml`).
+
+### The simulation (what a day of Even Keel buys you)
+
+```sh
+cargo run -p evenkeel-server --bin sim --release
+```
+
+A deterministic 24-hour day (288 five-minute ticks) replayed against three
+scripted traffic patterns — steady drain, burst, oscillating — twice each:
+unmanaged, and managed by the **real** executor/planner/store code paths (no
+simulation-only logic touches a decision). Output: `ops/sim/report.html`, a
+self-contained with/without balance-ratio trajectory chart, committed in-repo.
+Sample result: steady drain ends the day at 34.3% mean imbalance managed vs
+41.7% unmanaged, for 0.44 CKB in fees — and on the oscillating pattern the
+cooldown correctly refuses to chase traffic that would undo each rebalance.
+The §8 property test pins the safety claim: for any policy, fees never exceed
+the daily cap and net imbalance never increases over a simulated day.
 
 ### Development
 
