@@ -7,4 +7,5 @@ pub mod config;
 pub mod control;
 pub mod executor;
 pub mod metrics;
+pub mod sim;
 pub mod state;
