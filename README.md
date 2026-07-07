@@ -119,6 +119,43 @@ cd ops/spike
 
 The RPC port binds host-loopback only — it can spend your node's funds; never expose it.
 
+## What's real vs what's simulated
+
+The hackathon brief rewards saying this plainly, so:
+
+**Real, proven on Pudge testnet (2026-07-02, [evidence](docs/spike-notes.md)):**
+- A circular self-payment rebalance settled on FNN v0.8.1 via
+  `send_payment(allow_self_payment, keysend)` — payment hash `0x5888…cc54`,
+  actual fee exactly equal to the dry-run quote (0.1 CKB on 100 CKB moved).
+- The RPC client (`RealNode`), the funding/channel-open flow, and the
+  loopback-only security posture — all exercised against a live node.
+
+**Real code, scripted environment (the default demo):**
+- Every decision, execution, persistence, and safety code path in the demo is
+  the production code — the same planner, the same §6 executor state machine,
+  the same budget ledger. Mock mode swaps exactly one component behind the
+  `FiberRpc` trait: the node (scripted balances, deterministic 0.1% fees,
+  instant settlement). Nothing decision-relevant is stubbed.
+- The 24h simulation (`ops/sim/report.html`) replays scripted traffic through
+  those same real code paths, deterministically.
+
+**Why the demo defaults to mock:** public Fiber testnet routing is sparse and
+peer quality uneven (documented first-hand in the spike notes — unreachable
+announced addresses, peers failing the Init handshake). The tool runs against
+a real node today (`--profile testnet`), but a reproducible demo should not be
+hostage to testnet weather (ADR-6). The Phase 0 settlement is the proof the
+real path works; the mock is the proof the judgment layer works.
+
+## The gap this addresses
+
+The [FNN README](https://github.com/nervosnetwork/fiber) lists **"advanced
+channel liquidity management"** as an unchecked TODO. On Lightning, that gap
+grew a whole tool category (lndmanage, charge-lnd, bos rebalance) because
+routing nodes bleed revenue without it. Fiber has the primitive (self-payment
+rebalancing is documented in the RPC) but no tooling. Even Keel is the first:
+monitoring, drift detection, priced proposals, budget-bounded autopilot, and
+an audit trail — advisory by default, everything explainable.
+
 ## Design principles (the short version)
 
 - **One serialized control loop; at most one rebalance in flight, ever.** Explainability over throughput — every action traces to one snapshot, one plan, one price. (The testnet spike independently endorsed this: concurrent channel funding races a single wallet cell and loses.)
