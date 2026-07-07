@@ -30,7 +30,7 @@ use evenkeel_store::{ActionState, Store};
 use serde::Serialize;
 use tracing::info;
 
-use crate::executor::{Approvals, Executor};
+use crate::executor::{Approvals, Executor, PolicyState, SharedPolicy};
 use crate::metrics::Metrics;
 
 /// One simulated tick = 5 minutes, matching a realistic poll cadence.
@@ -353,11 +353,18 @@ pub async fn run_simulated_ticks(
     );
 
     let approvals = Approvals::default();
+    // The sim pins one immutable policy for the whole day (deterministic);
+    // the shared handle exists only because the executor's signature is the
+    // live-server one — nothing writes to it mid-run.
+    let shared_policy: SharedPolicy = Arc::new(std::sync::Mutex::new(PolicyState {
+        policy: policy.clone(),
+        autopilot: false,
+    }));
     let mut executor = if managed {
         let mut ex = Executor::new(
             node.clone(),
             store.clone(),
-            policy.clone(),
+            shared_policy,
             node_id.clone(),
             approvals.clone(),
             Arc::new(Metrics::new()?),
