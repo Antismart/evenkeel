@@ -16,6 +16,13 @@
 //! - the action row (with `intent_id`) is written BEFORE the send RPC, so
 //!   the §7 crash window is bounded and reconcilable;
 //! - `actual_fee` (from `get_payment`) is what enters the ledger.
+//!
+//! Approval comes from the operator (advisory) or, when the opt-in autopilot
+//! flag is ON, from policy itself — the PRICED gate, execution-time budget
+//! re-check, and channel re-validation are identical either way; autopilot
+//! rows carry `mode = "autopilot"` plus the §9 policy snapshot that
+//! authorized them. Worst case under any logic failure stays bounded by the
+//! daily fee budget (§4), enforced here and node-side via `max_fee_amount`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,11 +47,33 @@ const RECONCILE_WINDOW_MS: u64 = 10 * 60 * 1_000;
 /// Operator decisions arriving from the API: `intent_id → approve?`.
 pub type Approvals = Arc<Mutex<HashMap<String, bool>>>;
 
+/// The live policy plus the autopilot switch — one lock, so the executor
+/// always reads the flag and the bounds it authorizes together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyState {
+    /// Bounds every action must clear (§5.3 step 5).
+    pub policy: Policy,
+    /// When true, a PRICED action that passes `accept_priced` executes on the
+    /// next tick without an operator click. Opt-in; default OFF (ADR-4).
+    pub autopilot: bool,
+}
+
+impl Default for PolicyState {
+    fn default() -> Self {
+        Self { policy: Policy::default(), autopilot: false }
+    }
+}
+
+/// Shared policy handle: the API writes (PUT `/api/policy`), the control loop
+/// and executor read each tick — policy changes apply without a restart.
+/// Same sharing shape as [`Approvals`].
+pub type SharedPolicy = Arc<Mutex<PolicyState>>;
+
 /// The serialized executor.
 pub struct Executor {
     node: Arc<dyn FiberRpc>,
     store: Store,
-    policy: Policy,
+    policy: SharedPolicy,
     node_id: String,
     cooldowns: CooldownState,
     approvals: Approvals,
@@ -58,7 +87,7 @@ impl Executor {
     pub fn new(
         node: Arc<dyn FiberRpc>,
         store: Store,
-        policy: Policy,
+        policy: SharedPolicy,
         node_id: String,
         approvals: Approvals,
         metrics: Arc<Metrics>,
@@ -76,6 +105,13 @@ impl Executor {
         }
     }
 
+    /// Snapshot the live policy + autopilot flag. Cloned out so no lock is
+    /// ever held across an await; one action step runs against one coherent
+    /// policy read.
+    fn policy_state(&self) -> PolicyState {
+        self.policy.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     /// Shannons spent from the daily budget so far today (UTC day window).
     pub async fn spent_today(&self, now_ms: u64) -> u128 {
         let day_start = now_ms - (now_ms % 86_400_000);
@@ -86,7 +122,7 @@ impl Executor {
                 // Conservative: an unreadable ledger counts as a full budget
                 // (§7 — never spend against unknown accounting).
                 error!(error = %e, "fee ledger unreadable; treating budget as exhausted");
-                self.policy.max_fee_per_day
+                self.policy_state().policy.max_fee_per_day
             })
     }
 
@@ -107,7 +143,8 @@ impl Executor {
             match action.state {
                 // Never priced or never approved: nothing was sent; close out.
                 ActionState::Planned | ActionState::Priced => {
-                    self.reject(&action.intent_id, "stale after restart", now_ms).await;
+                    self.reject(&action.intent_id, "stale after restart", &action.mode, now_ms)
+                        .await;
                 }
                 // Crash window: submitted (maybe), no hash recorded.
                 ActionState::Submitting => match action.payment_hash.as_deref() {
@@ -178,10 +215,11 @@ impl Executor {
         healths: &[ChannelHealth],
         now_ms: u64,
     ) {
+        let ps = self.policy_state();
         let Some(intent) = plan(
             snapshots,
             healths,
-            &self.policy,
+            &ps.policy,
             &self.cooldowns,
             self.tick,
             None,
@@ -204,7 +242,11 @@ impl Executor {
         );
 
         // Price before anything is committed (rule 6).
-        let quote = match self.node.send_payment(self.rebalance_params(&intent, true)).await {
+        let quote = match self
+            .node
+            .send_payment(self.rebalance_params(&intent, &ps.policy, true))
+            .await
+        {
             Ok(q) => q,
             Err(e) => {
                 warn!(intent_id, error = %e, "dry run failed; cooling pair");
@@ -215,7 +257,7 @@ impl Executor {
         };
 
         let spent = self.spent_today(now_ms).await;
-        if let Err(reason) = accept_priced(intent.benefit_bp, quote.fee, spent, &self.policy) {
+        if let Err(reason) = accept_priced(intent.benefit_bp, quote.fee, spent, &ps.policy) {
             info!(intent_id, ?reason, fee = quote.fee, "priced intent rejected by policy");
             self.record_rejected(&intent, &intent_id, format!("{reason:?}"), now_ms).await;
             return;
@@ -257,7 +299,7 @@ impl Executor {
     ) {
         // Stale quote: the network moved on; re-plan rather than send old math.
         if now_ms.saturating_sub(action.created_at_ms) > PRICE_TTL_MS {
-            self.reject(&action.intent_id, "price expired unapproved", now_ms).await;
+            self.reject(&action.intent_id, "price expired unapproved", "advisory", now_ms).await;
             self.note_pair_cooldown(action);
             return;
         }
@@ -267,13 +309,21 @@ impl Executor {
             approvals.remove(&action.intent_id)
         };
         match decision {
-            None => {} // keep waiting for the operator
+            None => {
+                // No operator word. With autopilot ON, a PRICED action that
+                // passed policy executes now — same state machine, same
+                // execution-time re-checks, no waiting (ADR-4 opt-in).
+                if self.policy_state().autopilot {
+                    info!(intent_id = %action.intent_id, "autopilot approving priced action");
+                    self.execute_approved(action, snapshots, now_ms, "autopilot").await;
+                }
+            }
             Some(false) => {
                 info!(intent_id = %action.intent_id, "operator declined");
-                self.reject(&action.intent_id, "declined by operator", now_ms).await;
+                self.reject(&action.intent_id, "declined by operator", "advisory", now_ms).await;
                 self.note_pair_cooldown(action);
             }
-            Some(true) => self.execute_approved(action, snapshots, now_ms).await,
+            Some(true) => self.execute_approved(action, snapshots, now_ms, "advisory").await,
         }
     }
 
@@ -282,13 +332,19 @@ impl Executor {
         action: &ActionRecord,
         snapshots: &[ChannelSnapshot],
         now_ms: u64,
+        mode: &str,
     ) {
+        // One coherent policy read authorizes this whole step: the budget
+        // re-check, the node-side fee ceiling, and (autopilot) the §9 audit
+        // snapshot are all the same policy.
+        let ps = self.policy_state();
         // §6: re-check the budget at execution time — the ledger may have
         // moved since pricing.
         let quoted_fee = action.quoted_fee.unwrap_or(0);
         let spent = self.spent_today(now_ms).await;
-        if let Err(reason) = accept_priced(action.benefit_bp, quoted_fee, spent, &self.policy) {
-            self.reject(&action.intent_id, &format!("at execution: {reason:?}"), now_ms).await;
+        if let Err(reason) = accept_priced(action.benefit_bp, quoted_fee, spent, &ps.policy) {
+            self.reject(&action.intent_id, &format!("at execution: {reason:?}"), mode, now_ms)
+                .await;
             self.note_pair_cooldown(action);
             return;
         }
@@ -299,19 +355,30 @@ impl Executor {
                 .any(|s| s.channel_id == id && s.ready && s.capacity() > 0)
         };
         if !ready(&action.source_channel) || !ready(&action.sink_channel) {
-            self.reject(&action.intent_id, "channel no longer ready", now_ms).await;
+            self.reject(&action.intent_id, "channel no longer ready", mode, now_ms).await;
             self.note_pair_cooldown(action);
             return;
         }
 
         // Row moves to SUBMITTING BEFORE the RPC — the §6 crash-window rule.
+        // Autopilot stamps its mode and the serialized policy that authorized
+        // the execution (§9 audit) in the same guarded transition.
+        let submit_patch = if mode == "autopilot" {
+            TransitionPatch {
+                mode: Some("autopilot".into()),
+                policy_snapshot: serde_json::to_string(&ps.policy).ok(),
+                ..Default::default()
+            }
+        } else {
+            TransitionPatch::default()
+        };
         if let Err(e) = self
             .store
             .transition_action(
                 &action.intent_id,
                 &[ActionState::Priced],
                 ActionState::Submitting,
-                TransitionPatch::default(),
+                submit_patch,
                 now_ms,
             )
             .await
@@ -327,8 +394,8 @@ impl Executor {
             amount: action.amount,
             benefit_bp: action.benefit_bp,
         };
-        info!(intent_id = %action.intent_id, "submitting rebalance payment");
-        match self.node.send_payment(self.rebalance_params(&intent, false)).await {
+        info!(intent_id = %action.intent_id, mode, "submitting rebalance payment");
+        match self.node.send_payment(self.rebalance_params(&intent, &ps.policy, false)).await {
             Ok(payment) => {
                 let ok = self
                     .store
@@ -353,7 +420,7 @@ impl Executor {
             }
             Err(e) => {
                 warn!(intent_id = %action.intent_id, error = %e, "send failed after successful dry run");
-                self.fail(&action.intent_id, &format!("send failed: {e}"), now_ms).await;
+                self.fail(&action.intent_id, &format!("send failed: {e}"), mode, now_ms).await;
                 self.note_pair_cooldown(action);
             }
         }
@@ -362,9 +429,11 @@ impl Executor {
     // ---- CONFIRMING / STUCK -------------------------------------------------
 
     async fn poll_confirming(&mut self, action: &ActionRecord, now_ms: u64) {
+        let mode = action.mode.clone();
         let Some(hash) = action.payment_hash.clone() else {
             // Confirming without a hash cannot progress; reconcile as orphan.
-            self.orphan(&action.intent_id, "confirming without payment hash", now_ms).await;
+            self.orphan(&action.intent_id, "confirming without payment hash", &mode, now_ms)
+                .await;
             return;
         };
         let payment = match self.node.get_payment(&hash).await {
@@ -389,7 +458,7 @@ impl Executor {
                 match ok {
                     Ok(()) => {
                         info!(intent_id = %action.intent_id, actual_fee = payment.fee, "settled");
-                        self.metrics.observe_action("settled", "advisory");
+                        self.metrics.observe_action("settled", &mode);
                         self.metrics.add_fee(payment.fee);
                         self.note_pair_cooldown(action);
                     }
@@ -398,7 +467,7 @@ impl Executor {
             }
             PaymentStatus::Failed => {
                 let reason = payment.failed_error.unwrap_or_else(|| "payment failed".into());
-                self.fail(&action.intent_id, &reason, now_ms).await;
+                self.fail(&action.intent_id, &reason, &mode, now_ms).await;
                 self.note_pair_cooldown(action);
             }
             PaymentStatus::Created | PaymentStatus::Inflight => {
@@ -418,7 +487,7 @@ impl Executor {
                             now_ms,
                         )
                         .await;
-                    self.metrics.observe_action("stuck", "advisory");
+                    self.metrics.observe_action("stuck", &mode);
                 }
             }
         }
@@ -452,6 +521,7 @@ impl Executor {
                 self.orphan(
                     &action.intent_id,
                     "submitted but no matching payment found in reconcile window",
+                    &action.mode,
                     now_ms,
                 )
                 .await;
@@ -482,11 +552,16 @@ impl Executor {
 
     // ---- small transition helpers ------------------------------------------
 
-    fn rebalance_params(&self, intent: &RebalanceIntent, dry_run: bool) -> SendPaymentParams {
+    fn rebalance_params(
+        &self,
+        intent: &RebalanceIntent,
+        policy: &Policy,
+        dry_run: bool,
+    ) -> SendPaymentParams {
         SendPaymentParams {
             target_pubkey: Some(self.node_id.clone()),
             amount: Some(intent.amount),
-            max_fee_amount: Some(self.policy.max_fee_per_action),
+            max_fee_amount: Some(policy.max_fee_per_action),
             keysend: Some(true),
             allow_self_payment: Some(true),
             udt_type_script: match &intent.asset {
@@ -507,11 +582,12 @@ impl Executor {
     ) {
         // Cool the pair either way so a permanently unroutable/unprofitable
         // pair doesn't re-propose every tick.
+        let cooldown_ticks = self.policy_state().policy.cooldown_ticks;
         self.cooldowns.note_action(
             &intent.source_channel,
             &intent.sink_channel,
             self.tick,
-            self.policy.cooldown_ticks,
+            cooldown_ticks,
         );
         let record = ActionRecord {
             intent_id: intent_id.to_string(),
@@ -538,15 +614,16 @@ impl Executor {
     }
 
     fn note_pair_cooldown(&mut self, action: &ActionRecord) {
+        let cooldown_ticks = self.policy_state().policy.cooldown_ticks;
         self.cooldowns.note_action(
             &action.source_channel,
             &action.sink_channel,
             self.tick,
-            self.policy.cooldown_ticks,
+            cooldown_ticks,
         );
     }
 
-    async fn reject(&mut self, intent_id: &str, reason: &str, now_ms: u64) {
+    async fn reject(&mut self, intent_id: &str, reason: &str, mode: &str, now_ms: u64) {
         let ok = self
             .store
             .transition_action(
@@ -560,11 +637,11 @@ impl Executor {
         if let Err(e) = ok {
             error!(intent_id, error = %e, "reject transition refused");
         } else {
-            self.metrics.observe_action("rejected", "advisory");
+            self.metrics.observe_action("rejected", mode);
         }
     }
 
-    async fn fail(&mut self, intent_id: &str, reason: &str, now_ms: u64) {
+    async fn fail(&mut self, intent_id: &str, reason: &str, mode: &str, now_ms: u64) {
         let ok = self
             .store
             .transition_action(
@@ -578,11 +655,11 @@ impl Executor {
         if let Err(e) = ok {
             error!(intent_id, error = %e, "fail transition refused");
         } else {
-            self.metrics.observe_action("failed", "advisory");
+            self.metrics.observe_action("failed", mode);
         }
     }
 
-    async fn orphan(&mut self, intent_id: &str, reason: &str, now_ms: u64) {
+    async fn orphan(&mut self, intent_id: &str, reason: &str, mode: &str, now_ms: u64) {
         let ok = self
             .store
             .transition_action(
@@ -597,7 +674,7 @@ impl Executor {
             error!(intent_id, error = %e, "orphan transition refused");
         } else {
             error!(intent_id, reason, "ORPHAN-SUSPECT action — operator attention required");
-            self.metrics.observe_action("orphan_suspect", "advisory");
+            self.metrics.observe_action("orphan_suspect", mode);
         }
     }
 

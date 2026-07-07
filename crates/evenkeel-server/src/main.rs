@@ -4,11 +4,10 @@
 
 use std::sync::Arc;
 
-use evenkeel_core::Policy;
 use evenkeel_node::{FiberRpc, MockNode, RealNode};
 use evenkeel_server::api::{router, ApiState};
 use evenkeel_server::config::{Config, NodeMode};
-use evenkeel_server::executor::Approvals;
+use evenkeel_server::executor::{Approvals, SharedPolicy};
 use evenkeel_server::metrics::Metrics;
 use evenkeel_server::state::SharedDashboard;
 use evenkeel_server::control;
@@ -42,21 +41,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dashboard: SharedDashboard = SharedDashboard::default();
     let metrics = Arc::new(Metrics::new()?);
     let approvals: Approvals = Approvals::default();
-    // Phase 2 runs the default policy (advisory only); operator-editable
-    // policy arrives with the Phase 3 policy engine.
-    let policy = Policy::default();
+    // Boot on defaults (advisory, autopilot OFF); the control loop replaces
+    // this with the node's persisted policy once identity is known, and
+    // PUT /api/policy edits it live.
+    let policy: SharedPolicy = SharedPolicy::default();
 
     tokio::spawn(control::run(
         config.clone(),
         node,
-        store,
+        store.clone(),
         dashboard.clone(),
         metrics.clone(),
         approvals.clone(),
-        policy,
+        policy.clone(),
     ));
 
-    let app = router(ApiState { dashboard, metrics, approvals });
+    let app = router(ApiState { dashboard, metrics, approvals, policy, store });
     let listener = tokio::net::TcpListener::bind(&config.bind).await?;
     info!(addr = %config.bind, "API listening");
     axum::serve(listener, app)
